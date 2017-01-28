@@ -11,7 +11,7 @@ args = None
 
 
 def dbg_msg(msg="", verbosity=0):
-    # intended verbosity levels: 0-2
+    # intended verbosity levels: 0-3
     if args.verbose >= verbosity:
         print(msg)
 
@@ -57,11 +57,11 @@ def error_to_string(error):
     elif error == 'err_lang_required':
         return "Paste language was not specified"
     elif error == 'err_lang_invalid':
-        return "An invalid language was used"
+        return "An invalid language was used (try '{} param language' to get possible values)".format(sys.argv[0])
     elif error == 'err_expire_integer':
         return "The paste expiration value must be an integer"
     elif error == 'err_expire_invalid':
-        return "An invalid expiration time was used"
+        return "An invalid expiration time was used (try '{} param expire' to get possible values)".format(sys.argv[0])
     elif error == 'err_not_found':
         return "Paste not found"
     elif error == 'err_invalid_hash':
@@ -92,20 +92,18 @@ def action_paste():
     project = optarg('project')
 
     data = args.data
-    language = args.language
+    language = args.language[0]
     title = optarg('title')
     private = args.private
     password = optarg('password')
     expire = optarg('expire')
 
-    dbg_msg("Creating paste on " + host, 0)
+    dbg_msg("Creating {} paste on {}".format("private" if private else "public", host), 0)
 
     dbg_msg("Title is {}".format(title if title is not None else "chosen based on the paste's ID"), 1)
+    dbg_msg("Using default expire time" if expire is None else "Paste will expire after {} minutes".format(expire), 2)
     dbg_msg("No password given" if password is None else "Password is '{}'".format(password), 1)
-    dbg_msg("Paste will be {}".format("private" if private else "public"), 2)
-    dbg_msg("Using default expire" if expire is None else "Using expire of {} minutes".format(expire), 2)
     dbg_msg("Language is " + language)
-    dbg_msg("Host is " + host, 2)
     dbg_msg("Project is {}".format("omitted" if project is None else project), 2)
     dbg_msg("DATA: " + data, 3)
 
@@ -172,7 +170,7 @@ def action_param():
     # inherited from global:
     #  host     opt str "paste.kde.org"
     #  project  opt str     None    omit
-    
+
     host = optarg('host')
     project = optarg('project')
 
