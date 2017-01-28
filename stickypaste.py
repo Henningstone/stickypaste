@@ -156,19 +156,23 @@ def action_paste():
 
 
 def action_show():
+    global args
     pass
 
 
 def action_list():
+    global args
     pass
 
 
 def action_param():
+    global args
     # arguments processed by this function:
     #  param    req str
     # inherited from global:
     #  host     opt str "paste.kde.org"
     #  project  opt str     None    omit
+    
     host = optarg('host')
     project = optarg('project')
 
