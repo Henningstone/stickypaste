@@ -20,8 +20,8 @@ def optarg(name):
     res = getattr(args, name, None)
     if res is None:
         return None
-    elif isinstance(res, type([])):
-        return res[0]
+    # elif isinstance(res, type([])):
+    #     return res[0]
     else:
         return res
 
@@ -92,7 +92,7 @@ def action_paste():
     project = optarg('project')
 
     data = args.data
-    language = args.language[0]
+    language = args.language
     title = optarg('title')
     private = args.private
     password = optarg('password')
@@ -174,7 +174,7 @@ def action_param():
     host = optarg('host')
     project = optarg('project')
 
-    param = args.param[0]
+    param = args.param
 
     # the api endpoint
     url = get_endpoint_url(host, 'parameter') + "/" + param
@@ -223,36 +223,36 @@ def main():
     group.add_argument("--verbose", "-v", help="be more verbose", action="count", default=0)
     group.add_argument("--quiet", "-q", help="only output the resulting paste's url, or nothing on failure (useful for usage in scripts)", action="store_true")
 
-    parser.add_argument("--host", help="the API url (defaults to paste.kde.org of omitted)", nargs=1, default="https://paste.kde.org")
-    parser.add_argument("--project", help="Whether to associate the paste with a project (may not be supported by all hosts)", nargs=1)
+    parser.add_argument("--host", help="the API url (defaults to paste.kde.org of omitted)", default="https://paste.kde.org")
+    parser.add_argument("--project", help="Whether to associate the paste with a project (may not be supported by all hosts)")
 
     subparsers = parser.add_subparsers(title="actions", description="Tells stickypaste what to do", help="use '%(prog)s <action> --help' for help on the actions and their individual arguments")
 
     # parse 'paste' command
     parser_paste = subparsers.add_parser('paste', help='create a new paste', aliases=['p'])
     parser_paste.add_argument("data", help="the text to paste")
-    parser_paste.add_argument("--language", "-l", help="The paste's language; defaults to 'text'", nargs=1, default="text")
-    parser_paste.add_argument("--title", "-t", help="The paste title; will be based on generated ID if omitted", nargs=1)
+    parser_paste.add_argument("--language", "-l", help="The paste's language; defaults to 'text'", default="text")
+    parser_paste.add_argument("--title", "-t", help="The paste title; will be based on generated ID if omitted")
     parser_paste.add_argument("--private", "-p", help="Make the paste private", action="store_true")
-    parser_paste.add_argument("--password", help="A password string to protect the paste", nargs=1)
-    parser_paste.add_argument("--expire", help="Time in minutes after which paste will be deleted from server", metavar="SECONDS", type=int, nargs=1)
+    parser_paste.add_argument("--password", help="A password string to protect the paste")
+    parser_paste.add_argument("--expire", help="Time in minutes after which paste will be deleted from server", metavar="SECONDS", type=int)
     parser_paste.set_defaults(func=action_paste)
 
     # parse 'show' command
     parser_show = subparsers.add_parser('show', help='show an existing paste', aliases=['s'])
-    parser_show.add_argument("id", help="The unique paste identifier", nargs=1)
-    parser_show.add_argument("--hash", "-k", help="Hash/key for the paste (only for private pastes)", nargs=1)
-    parser_show.add_argument("--password", "-p", help="Password to unlock the paste (only for protected pastes)", nargs=1)
+    parser_show.add_argument("id", help="The unique paste identifier")
+    parser_show.add_argument("--hash", "-k", help="Hash/key for the paste (only for private pastes)")
+    parser_show.add_argument("--password", "-p", help="Password to unlock the paste (only for protected pastes)")
     parser_show.set_defaults(func=action_show)
 
     # parse 'list' command
     parser_list = subparsers.add_parser('list', help='get a list of pastes IDs', aliases=['l'])
-    parser_list.add_argument("page", help="The list page to be fetched", nargs=1)
+    parser_list.add_argument("page", help="The list page to be fetched")
     parser_list.set_defaults(func=action_list)
 
     # parse 'param' command
     parser_param = subparsers.add_parser('param', help='get certain server-side parameters', aliases=['setting'])
-    parser_param.add_argument("param", help="which parameter to request", nargs=1, choices=['expire', 'language', 'version', 'theme'])
+    parser_param.add_argument("param", help="which parameter to request", choices=['expire', 'language', 'version', 'theme'])
     parser_param.set_defaults(func=action_param)
 
     args = parser.parse_args()
