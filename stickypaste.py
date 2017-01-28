@@ -44,6 +44,38 @@ def payload_add(payload, key, value):
         payload[key] = value
 
 
+def error_to_string(error):
+    # compare https://sayakb.github.io/sticky-notes/pages/api/
+    if error == 'err_cannot_post':
+        return "The site has disabled public posting"
+    elif error == 'err_title_max_30':
+        return "Title cannot be longer than 30 characters"
+    elif error == 'err_data_required':
+        return "Paste body was not sent"
+    elif error == 'err_data_too_big':
+        return "Paste body exceeds maximum size configured for the site"
+    elif error == 'err_lang_required':
+        return "Paste language was not specified"
+    elif error == 'err_lang_invalid':
+        return "An invalid language was used"
+    elif error == 'err_expire_integer':
+        return "The paste expiration value must be an integer"
+    elif error == 'err_expire_invalid':
+        return "An invalid expiration time was used"
+    elif error == 'err_not_found':
+        return "Paste not found"
+    elif error == 'err_invalid_hash':
+        return "Invalid hash code for a private paste"
+    elif error == 'err_password_required':
+        return "Password required to view the paste"
+    elif error == 'err_invalid_password':
+        return "Incorrect password supplied"
+    elif error == 'err_no_pastes':
+        return "No pastes found"
+    elif error == 'err_invalid_param':
+        return "Value list not available for specified parameter"
+
+
 def action_paste():
     global args
     # arguments processed by this function:
@@ -57,6 +89,7 @@ def action_paste():
     #  project  opt str     None    omit
 
     host = optarg('host')
+    project = optarg('project')
 
     data = args.data
     language = args.language
@@ -64,7 +97,6 @@ def action_paste():
     private = args.private
     password = optarg('password')
     expire = optarg('expire')
-    project = optarg('project')
 
     dbg_msg("Creating paste on " + host, 0)
 
@@ -80,49 +112,36 @@ def action_paste():
     # the api endpoint
     url = get_endpoint_url(host, 'create')
 
-    # mandatory parts of the payload
+    # prepare the payload
     payload = {}
+    payload_add(payload, 'project', project)
     payload_add(payload, 'data', data)
     payload_add(payload, 'language', language)
     payload_add(payload, 'title', title)
     payload_add(payload, 'private', private)
     payload_add(payload, 'password', password)
     payload_add(payload, 'expire', expire)
-    payload_add(payload, 'project', project)
     dbg_msg("PAYLOAD: " + str(payload), 3)
 
+    # send the request
     dbg_msg()
     r = requests.post(url, json=payload)
-    dbg_msg("RESULT: " + str(r.status_code), 2)
+    dbg_msg("URL: " + r.url, 3)
+    dbg_msg("RESULT: " + str(r.status_code) + " " + r.reason, 2)
     try:
         r.raise_for_status()
     except requests.exceptions.HTTPError:
-        dbg_msg("Failed to create the paste")
+        dbg_msg("Failed to create the paste (HTTP Error: {})".format(str(r.status_code) + " " + r.reason))
         return 1
 
+    # handle the answer
     dbg_msg(r.text, 2)
     result = json.loads(r.text)
 
     # check for errors returned by the API
     try:
         error = result['result']['error']
-
-        if error == 'err_cannot_post':
-            dbg_msg("The site has disabled public posting")
-        elif error == 'err_title_max_30':
-            dbg_msg("Title cannot be longer than 30 characters")
-        elif error == 'err_data_required':
-            dbg_msg("Paste body was not sent")
-        elif error == 'err_data_too_big':
-            dbg_msg("Paste body exceeds maximum size configured for the site")
-        elif error == 'err_lang_required':
-            dbg_msg("Paste language was not specified")
-        elif error == 'err_lang_invalid':
-            dbg_msg("An invalid language was used")
-        elif error == 'err_expire_integer':
-            dbg_msg("The paste expiration value must be an integer")
-        elif error == 'err_expire_invalid':
-            dbg_msg("An invalid expiration time was used")  # TODO param action
+        dbg_msg(error_to_string(error))
         return 1
 
     except KeyError:  # no errors
@@ -142,6 +161,55 @@ def action_show():
 
 def action_list():
     pass
+
+
+def action_param():
+    # arguments processed by this function:
+    #  param    req str
+    # inherited from global:
+    #  host     opt str "paste.kde.org"
+    #  project  opt str     None    omit
+    host = optarg('host')
+    project = optarg('project')
+
+    param = args.param[0]
+
+    # the api endpoint
+    url = get_endpoint_url(host, 'parameter') + "/" + param
+
+    # prepare the payload
+    payload = {}
+    payload_add(payload, 'project', project)
+    payload_add(payload, 'param', param)
+    dbg_msg("PAYLOAD: " + str(payload), 3)
+
+    # send the request
+    dbg_msg()
+    r = requests.get(url, json=payload)
+    dbg_msg("URL: " + r.url, 3)
+    dbg_msg("RESULT: " + str(r.status_code) + " " + r.reason, 2)
+    try:
+        r.raise_for_status()
+    except requests.exceptions.HTTPError:
+        dbg_msg("Request failed (HTTP Error: {})".format(str(r.status_code) + " " + r.reason))
+        return 1
+
+    # handle the answer
+    dbg_msg(r.text, 2)
+    result = json.loads(r.text)
+
+    # check for errors returned by the API
+    try:
+        error = result['result']['error']
+        dbg_msg(error_to_string(error))
+        return 1
+
+    except KeyError:  # no errors
+        dbg_msg("Values for parameter '{}':".format(param))
+        accepted = result['result']['values']
+        dbg_msg(accepted, -1)
+
+    return 0
 
 
 def main():
@@ -179,6 +247,11 @@ def main():
     parser_list = subparsers.add_parser('list', help='get a list of pastes IDs', aliases=['l'])
     parser_list.add_argument("page", help="The list page to be fetched", nargs=1)
     parser_list.set_defaults(func=action_list)
+
+    # parse 'param' command
+    parser_param = subparsers.add_parser('param', help='get certain server-side parameters', aliases=['setting'])
+    parser_param.add_argument("param", help="which parameter to request", nargs=1, choices=['expire', 'language', 'version', 'theme'])
+    parser_param.set_defaults(func=action_param)
 
     args = parser.parse_args()
 
