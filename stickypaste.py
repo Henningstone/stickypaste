@@ -217,7 +217,7 @@ def action_param():
 def main():
     global args
 
-    parser = argparse.ArgumentParser(description='Paste scripts to a sticky-notes API (by default paste.kde.org)')
+    parser = argparse.ArgumentParser(description='Paste text to a sticky-notes API (by default paste.kde.org)')
     parser.add_argument("--version", help="print the version and exit", action="store_true")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--verbose", "-v", help="be more verbose", action="count", default=0)
@@ -235,7 +235,7 @@ def main():
     parser_paste.add_argument("--title", "-t", help="The paste title; will be based on generated ID if omitted")
     parser_paste.add_argument("--private", "-p", help="Make the paste private", action="store_true")
     parser_paste.add_argument("--password", help="A password string to protect the paste")
-    parser_paste.add_argument("--expire", help="Time in minutes after which paste will be deleted from server", metavar="SECONDS", type=int)
+    parser_paste.add_argument("--expire", "-e", help="Time in minutes after which paste will be deleted from server", metavar="SECONDS", type=int)
     parser_paste.set_defaults(func=action_paste)
 
     # parse 'show' command
