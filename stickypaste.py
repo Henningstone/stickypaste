@@ -58,6 +58,9 @@ def net_perform_to_json(url, payload, method) -> dict or None:
 
 
 def net_perform(url, payload: dict, method: str) -> requests.Response or None:
+    if args.dry_run:
+        dbg_err("dry-run, not sending request!")
+        return None
     try:
         r = None
         if method.upper() == 'POST':
@@ -104,55 +107,64 @@ def response_to_json(plaintext) -> dict or None:
 
 def error_to_string(error):
     # compare https://sayakb.github.io/sticky-notes/pages/api/
-    if error == 'err_cannot_post':
-        return "The site has disabled public posting"
-    elif error == 'err_title_max_30':
-        return "Title cannot be longer than 30 characters"
-    elif error == 'err_data_required':
-        return "Paste body was not sent"
-    elif error == 'err_data_too_big':
-        return "Paste body exceeds maximum size configured for the site"
-    elif error == 'err_lang_required':
-        return "Paste language was not specified"
-    elif error == 'err_lang_invalid':
-        return "An invalid language was used (try '{} param language' to get possible values)".format(sys.argv[0])
-    elif error == 'err_expire_integer':
-        return "The paste expiration value must be an integer"
-    elif error == 'err_expire_invalid':
-        return "An invalid expiration time was used (try '{} param expire' to get possible values)".format(sys.argv[0])
-    elif error == 'err_not_found':
-        return "Paste not found"
-    elif error == 'err_invalid_hash':
-        return "Invalid hash code for a private paste"
-    elif error == 'err_password_required':
-        return "Password required to view the paste"
-    elif error == 'err_invalid_password':
-        return "Incorrect password supplied"
-    elif error == 'err_no_pastes':
-        return "No pastes found"
-    elif error == 'err_invalid_param':
-        return "Value list not available for specified parameter"
+    messages = {
+        'err_cannot_post': "The site has disabled public posting",
+        'err_title_max_30': "Title cannot be longer than 30 characters",
+        'err_data_required': "Paste body was not sent",
+        'err_data_too_big': "Paste body exceeds maximum size configured for the site",
+        'err_lang_required': "Paste language was not specified",
+        'err_lang_invalid': "An invalid language was used (try '{} param language' to get possible values)".format(sys.argv[0]),
+        'err_expire_integer': "The paste expiration value must be an integer",
+        'err_expire_invalid': "An invalid expiration time was used (try '{} param expire' to get possible values)".format(sys.argv[0]),
+        'err_not_found': "Paste not found",
+        'err_invalid_hash': "Invalid hash code for a private paste",
+        'err_password_required': "Password required to view the paste",
+        'err_invalid_password': "Incorrect password supplied",
+        'err_no_pastes': "No pastes found",
+        'err_invalid_param': "Value list not available for specified parameter"
+    }
+    try:
+        return messages[error]
+    except KeyError:
+        return "unknown: " + error
+
+
+def load_langdict_from_file(filename="ext_to_lang.cfg") -> dict:
+    try:
+        f = io.open(filename)
+    except FileNotFoundError as e:
+        dbg_err("failed to load the langdict file '{}': {}".format(filename, e.strerror))
+        return {}
+
+    langdict = {}
+    for line in f.readlines():
+        l = line.rstrip('\n')
+        for i in range(len(l)):
+            prev = max(0, i-1)
+            if l[i] == ':' and l[prev] != '\\':
+                left = l[:prev].strip()
+                right = l[i+1:].strip()
+                dbg_msg("langdict parser: '{}' -> '{}' & '{}'".format(l, left, right), 3)
+                langdict[left] = right
+                break
+    f.close()
+    return langdict
 
 
 def fileext_to_lang(extension: str):
     """
     looks up the language which belongs to the given file extension
 
-    Remark: the extension must start with a .
+    Remark: the extension must start with a period
     """
     extension = extension.lower()
     if not extension.startswith('.'):
         return extension
 
-    langdict = {
-        'c++': 'cpp',
-        'c#': 'cs',
-        # TODO: add more as necessary
-    }
-
     # remove the leading period
     extension = extension[1:]
 
+    langdict = load_langdict_from_file()
     language = langdict.get(extension)
     if language is None:
         dbg_msg("could not find a language for '.{}', using the file's extension instead (provide --language to prevent this)".format(extension), 3)
@@ -320,6 +332,7 @@ def main():
 
     parser.add_argument("--host", help="the API url (defaults to paste.kde.org of omitted)", default="https://paste.kde.org")
     parser.add_argument("--project", help="Whether to associate the paste with a project (may not be supported by all hosts)")
+    parser.add_argument("--dry_run", "-s", help="Don't actually send anything to the server", action="store_true")
 
     subparsers = parser.add_subparsers(title="actions", description="Tells stickypaste what to do", help="use '%(prog)s <action> --help' for help on the actions and their individual arguments")
 
