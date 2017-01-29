@@ -24,8 +24,7 @@ def dbg_err(msg):
 
 
 def optarg(name):
-    res = getattr(args, name, None)
-    return res
+    return getattr(args, name)
 
 
 def fix_hostname(host):
@@ -181,8 +180,8 @@ def action_paste():
     #  private  def bool    false   omit
     #  password opt str     None    omit
     #  expire   opt int     None    omit
-    #  file     opt bool    false
-    #  data     req str
+    #  file     oe1 str     None
+    #  data     oe1 str     None
     # inherited from global:
     #  host     opt str "paste.kde.org"
     #  project  opt str     None    omit
@@ -190,27 +189,34 @@ def action_paste():
     host = optarg('host')
     project = optarg('project')
 
-    data = args.data
+    data = optarg('data')
+    filename = optarg('file')
     language = optarg('language')
     title = optarg('title')
     private = args.private
     password = optarg('password')
     expire = optarg('expire')
-    from_file = optarg('file')
-    filename = data if from_file else "command line"
 
-    if from_file:
-        try:
-            f = io.open(filename)
-            data = f.read()
-            f.close()
-        except IOError as e:
-            dbg_err("Failed to read from file '{}': {}".format(e.filename, e.strerror))
-            return 1
+    text = data
+    if text is None:
+        if filename is not None:
+            try:
+                f = io.open(filename)
+                text = f.read()
+                f.close()
+            except IOError as e:
+                dbg_err("Failed to read from file '{}': {}".format(e.filename, e.strerror))
+                return 1
+        else:
+            text = sys.stdin.read()
+
+    if text is None or len(text) == 0:
+        dbg_err("Got no text to paste")
+        return 1
 
     language_auto = False
     if language is None:
-        if from_file:
+        if filename is not None:
             language = guess_file_language(filename)
             language_auto = True
         else:
@@ -223,8 +229,8 @@ def action_paste():
     dbg_msg("Using default expire time" if expire is None else "Paste will expire after {} minutes".format(expire), 2)
     dbg_msg("Paste's language is set to '{}'{}".format(language, " (auto set, provide '--language <lang>' to prevent this)" if language_auto else ""), 1)
     dbg_msg("Project is {}".format("omitted" if project is None else project), 3)
-    dbg_msg("Data is read from {}".format(filename if from_file else "command line"), 2)
-    dbg_msg("DATA: " + data, 4)
+    dbg_msg("Data is read from {}".format(filename if filename is not None else "command line" if data is not None else "stdin"), 2)
+    dbg_msg("DATA: " + text, 5)
 
     # the api endpoint
     url = get_endpoint_url(host, 'create')
@@ -237,7 +243,7 @@ def action_paste():
     payload_add(payload, 'private', private)
     payload_add(payload, 'password', password)
     payload_add(payload, 'expire', expire)
-    payload_add(payload, 'data', data)
+    payload_add(payload, 'data', text)
     dbg_msg("FULL PAYLOAD: " + str(payload), 4)
     dbg_msg()
 
@@ -308,9 +314,9 @@ def main():
 
     parser = argparse.ArgumentParser(description='Paste text to a sticky-notes API (by default paste.kde.org)')
     parser.add_argument("--version", help="print the version and exit", action="store_true")
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("--verbose", "-v", help="be more verbose", action="count", default=0)
-    group.add_argument("--quiet", "-q", help="only output the resulting paste's url, or nothing on failure (useful for usage in scripts)", action="store_true")
+    parser_group_vq = parser.add_mutually_exclusive_group()
+    parser_group_vq.add_argument("--verbose", "-v", help="be more verbose", action="count", default=0)
+    parser_group_vq.add_argument("--quiet", "-q", help="only output the resulting paste's url, or nothing on failure (useful for usage in scripts)", action="store_true")
 
     parser.add_argument("--host", help="the API url (defaults to paste.kde.org of omitted)", default="https://paste.kde.org")
     parser.add_argument("--project", help="Whether to associate the paste with a project (may not be supported by all hosts)")
@@ -319,13 +325,14 @@ def main():
 
     # parse 'paste' command
     parser_paste = subparsers.add_parser('paste', help='create a new paste', aliases=['p'])
-    parser_paste.add_argument("data", help="the text to paste (in combination with --file: the path to the file to paste")
+    parser_paste_group_df = parser_paste.add_mutually_exclusive_group()  # help="If neither '--data' nor '--file' is present, the data will be taken from stdin"
+    parser_paste_group_df.add_argument("--data", "-d", help="the text to paste", metavar="TEXT")
+    parser_paste_group_df.add_argument("--file", "-f", help="file to take the data from")
     parser_paste.add_argument("--language", "-l", help="The paste's language; defaults to 'text'")
     parser_paste.add_argument("--title", "-t", help="The paste title; will be based on generated ID if omitted")
     parser_paste.add_argument("--private", "-p", help="Make the paste private", action="store_true")
     parser_paste.add_argument("--password", help="A password string to protect the paste")
     parser_paste.add_argument("--expire", "-e", help="Time in minutes after which paste will be deleted from server", metavar="SECONDS", type=int)
-    parser_paste.add_argument("--file", "-f", help="take the data from this file instead of the commandline", action="store_true")
     parser_paste.set_defaults(func=action_paste)
 
     # parse 'show' command
@@ -348,8 +355,8 @@ def main():
     args = parser.parse_args()
 
     if args.version:
-        print("Version: " + str(VERSION))
-        exit(0)
+        dbg_msg("Version: " + str(VERSION), -1)
+        return 0
 
     if args.quiet:
         args.verbose = -1
@@ -357,9 +364,10 @@ def main():
     if hasattr(args, 'func'):
         return args.func()
     else:
-        print("Invalid usage, try {} --help".format(sys.argv[0]))
-        exit(1)
+        dbg_err("Invalid usage, try {} --help".format(sys.argv[0]))
+        return 1
 
 
 if __name__ == '__main__':
-    main()
+    return_val = main()
+    exit(return_val)
