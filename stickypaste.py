@@ -136,18 +136,39 @@ def load_langdict_from_file(filename="ext_to_lang.cfg") -> dict:
         dbg_err("failed to load the langdict file '{}': {}".format(filename, e.strerror))
         return {}
 
-    langdict = {}
-    for line in f.readlines():
-        l = line.rstrip('\n')
-        for i in range(len(l)):
-            prev = max(0, i-1)
-            if l[i] == ':' and l[prev] != '\\':
-                left = l[:prev].strip()
-                right = l[i+1:].strip()
-                dbg_msg("langdict parser: '{}' -> '{}' & '{}'".format(l, left, right), 3)
-                langdict[left] = right
-                break
+    lines = f.readlines()
     f.close()
+    if len(lines) == 0:
+        dbg_msg("note: langdict file '{}' holds no entries".format(filename), 1)
+        return {}
+
+    langdict = {}
+    for line in range(len(lines)):
+        l = lines[line].rstrip('\n').strip()
+        if len(l) == 0 or l.startswith('#'):  # comment - who would have guessed...?
+            continue
+        l = l.replace('\\:', '\\\\<<colon>>\\\\')
+        split = l.split(':')
+        language = split[0].strip().replace('\\\\<<colon>>\\\\', '\\:')
+        if len(language) == 0:
+            dbg_msg("note: invalid line {} in langdict file '{}'".format(line, filename), 1)
+            continue
+        if len(split) == 1:
+            langdict[language] = ''
+            continue
+        extensions = split[1:]
+        for i in range(len(extensions)):
+            extensions[i] = extensions[i].strip()
+            if len(extensions[i]) == 0:
+                extensions[i] = language
+        dbg_msg("langdict parser: {} -> '{}'".format(extensions, language), 4)
+        for ext in extensions:
+            ext = ext.replace('\\\\<<colon>>\\\\', '\\:')
+            if len(ext) == 0:
+                # dbg_msg("warning: flawed line {} in langdict file '{}'".format(line, filename), 2)
+                continue
+            langdict[ext] = language
+
     return langdict
 
 
@@ -174,7 +195,7 @@ def fileext_to_lang(extension: str):
     return language
 
 
-def guess_file_language(filepath: str):
+def get_file_language(filepath: str):
     filename = filepath.split('/')[-1]
     dbg_msg("guessing language of file; path='{}', filename='{}'".format(filepath, filename), 3)
     if filename.find('.') == -1:
@@ -229,7 +250,7 @@ def action_paste():
     language_auto = False
     if language is None:
         if filename is not None:
-            language = guess_file_language(filename)
+            language = get_file_language(filename)
             language_auto = True
         else:
             language = "text"
@@ -314,8 +335,8 @@ def action_param():
         return 1
 
     # handle the response
-    dbg_msg("Values for parameter '{}':".format(param))
     accepted = result['result']['values']
+    dbg_msg("Got {} values for parameter '{}':".format(len(accepted), param))
     dbg_msg(accepted, -1)
 
     return 0
