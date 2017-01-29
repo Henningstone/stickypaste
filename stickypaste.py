@@ -1,11 +1,12 @@
 #!/usr/bin/python3
 
 import sys
+import io
 import argparse
 import requests
 import json
 
-VERSION = 20170128
+VERSION = 20170129
 
 args = None
 
@@ -13,17 +14,18 @@ args = None
 def dbg_msg(msg="", verbosity=0):
     # intended verbosity levels: 0-3
     if args.verbose >= verbosity:
+        if verbosity > 0:
+            msg = "[dbg_lvl={}] {}".format(verbosity, msg)
         print(msg)
+
+
+def dbg_err(msg):
+    print("Error: " + msg, file=sys.stderr)
 
 
 def optarg(name):
     res = getattr(args, name, None)
-    if res is None:
-        return None
-    # elif isinstance(res, type([])):
-    #     return res[0]
-    else:
-        return res
+    return res
 
 
 def fix_hostname(host):
@@ -37,11 +39,68 @@ def get_endpoint_url(host, action):
     return host + "/api/json/" + action
 
 
-def payload_add(payload, key, value):
+def payload_add(payload: dict, key, value):
     if payload is None:
         payload = {}
     if value is not None:
         payload[key] = value
+
+
+def net_perform_to_json(url, payload, method) -> dict or None:
+    """
+    Does net_perform and turns the response into json automatically
+    """
+
+    response = net_perform(url, payload, method)
+    if response is None:
+        return None
+
+    return response_to_json(response.text)
+
+
+def net_perform(url, payload: dict, method: str) -> requests.Response or None:
+    try:
+        r = None
+        if method.upper() == 'POST':
+            r = requests.post(url, json=payload, timeout=(2.0, 3.0))  # timeout=(connect, read)
+        elif method.upper() == 'GET':
+            r = requests.get(url, json=payload, timeout=(2.0, 3.0))  # timeout=(connect, read)
+
+        if r is None:
+            raise Exception("field 'method' must be either 'GET' or 'POST'")
+
+        dbg_msg("URL: " + r.url, 3)
+        dbg_msg("RESULT: " + str(r.status_code) + " " + r.reason, 2)
+        try:
+            r.raise_for_status()
+        except requests.exceptions.HTTPError:
+            dbg_err("HTTP Error: {}".format(str(r.status_code) + " " + r.reason))
+            return None
+        return r
+
+    except Exception as e:
+        dbg_err("network error{}".format("" if e.strerror is None else ": "+e.strerror))
+        return None
+
+
+def response_to_json(plaintext) -> dict or None:
+    """Converts the answer to json and performs error checking
+
+    :return: 'None' if errors occurred, otherwise the result as json
+    """
+
+    # handle the answer
+    dbg_msg(plaintext, 2)
+    result = json.loads(plaintext)
+
+    # check for errors returned by the API
+    try:
+        error = result['result']['error']
+        dbg_err(error_to_string(error))
+        return None
+
+    except KeyError:  # no errors
+        return result
 
 
 def error_to_string(error):
@@ -76,6 +135,45 @@ def error_to_string(error):
         return "Value list not available for specified parameter"
 
 
+def fileext_to_lang(extension: str):
+    """
+    looks up the language which belongs to the given file extension
+
+    Remark: the extension must start with a .
+    """
+    extension = extension.lower()
+    if not extension.startswith('.'):
+        return extension
+
+    langdict = {
+        'c++': 'cpp',
+        'c#': 'cs',
+        # TODO: add more as necessary
+    }
+
+    # remove the leading period
+    extension = extension[1:]
+
+    language = langdict.get(extension)
+    if language is None:
+        dbg_msg("could not find a language for '.{}', using the file's extension instead (provide --language to prevent this)".format(extension), 3)
+        return extension
+
+    dbg_msg("guessed extension '{}' to be language '{}'".format(extension, language), 3)
+    return language
+
+
+def guess_file_language(filepath: str):
+    filename = filepath.split('/')[-1]
+    dbg_msg("guessing language of file; path='{}', filename='{}'".format(filepath, filename), 3)
+    if filename.find('.') == -1:
+        return "text"
+
+    extension = filename[filename.rfind('.'):]
+    language = fileext_to_lang(extension)
+    return language
+
+
 def action_paste():
     global args
     # arguments processed by this function:
@@ -83,6 +181,7 @@ def action_paste():
     #  private  def bool    false   omit
     #  password opt str     None    omit
     #  expire   opt int     None    omit
+    #  file     opt bool    false
     #  data     req str
     # inherited from global:
     #  host     opt str "paste.kde.org"
@@ -92,20 +191,40 @@ def action_paste():
     project = optarg('project')
 
     data = args.data
-    language = args.language
+    language = optarg('language')
     title = optarg('title')
     private = args.private
     password = optarg('password')
     expire = optarg('expire')
+    from_file = optarg('file')
+    filename = data if from_file else "command line"
+
+    if from_file:
+        try:
+            f = io.open(filename)
+            data = f.read()
+            f.close()
+        except IOError as e:
+            dbg_err("Failed to read from file '{}': {}".format(e.filename, e.strerror))
+            return 1
+
+    language_auto = False
+    if language is None:
+        if from_file:
+            language = guess_file_language(filename)
+            language_auto = True
+        else:
+            language = "text"
 
     dbg_msg("Creating {} paste on {}".format("private" if private else "public", host), 0)
 
     dbg_msg("Title is {}".format(title if title is not None else "chosen based on the paste's ID"), 1)
-    dbg_msg("Using default expire time" if expire is None else "Paste will expire after {} minutes".format(expire), 2)
     dbg_msg("No password given" if password is None else "Password is '{}'".format(password), 1)
-    dbg_msg("Language is " + language)
-    dbg_msg("Project is {}".format("omitted" if project is None else project), 2)
-    dbg_msg("DATA: " + data, 3)
+    dbg_msg("Using default expire time" if expire is None else "Paste will expire after {} minutes".format(expire), 2)
+    dbg_msg("Paste's language is set to '{}'{}".format(language, " (auto set, provide '--language <lang>' to prevent this)" if language_auto else ""), 1)
+    dbg_msg("Project is {}".format("omitted" if project is None else project), 3)
+    dbg_msg("Data is read from {}".format(filename if from_file else "command line"), 2)
+    dbg_msg("DATA: " + data, 4)
 
     # the api endpoint
     url = get_endpoint_url(host, 'create')
@@ -113,42 +232,27 @@ def action_paste():
     # prepare the payload
     payload = {}
     payload_add(payload, 'project', project)
-    payload_add(payload, 'data', data)
     payload_add(payload, 'language', language)
     payload_add(payload, 'title', title)
     payload_add(payload, 'private', private)
     payload_add(payload, 'password', password)
     payload_add(payload, 'expire', expire)
-    dbg_msg("PAYLOAD: " + str(payload), 3)
+    payload_add(payload, 'data', data)
+    dbg_msg("FULL PAYLOAD: " + str(payload), 4)
+    dbg_msg()
 
     # send the request
-    dbg_msg()
-    r = requests.post(url, json=payload)
-    dbg_msg("URL: " + r.url, 3)
-    dbg_msg("RESULT: " + str(r.status_code) + " " + r.reason, 2)
-    try:
-        r.raise_for_status()
-    except requests.exceptions.HTTPError:
-        dbg_msg("Failed to create the paste (HTTP Error: {})".format(str(r.status_code) + " " + r.reason))
+    result = net_perform_to_json(url, payload, 'POST')
+    if result is None:
         return 1
 
-    # handle the answer
-    dbg_msg(r.text, 2)
-    result = json.loads(r.text)
-
-    # check for errors returned by the API
-    try:
-        error = result['result']['error']
-        dbg_msg(error_to_string(error))
-        return 1
-
-    except KeyError:  # no errors
-        paste_addr = fix_hostname(host) + "/" + result['result']['id']
-        if private or password is not None:
-            paste_addr = paste_addr + "/" + result['result']['hash']
-        dbg_msg(paste_addr, -1)
-        if password is not None:
-            dbg_msg("Password: '{}'".format(password), -1)
+    # handle the response
+    paste_addr = fix_hostname(host) + "/" + result['result']['id']
+    if private or password is not None:
+        paste_addr = paste_addr + "/" + result['result']['hash']
+    dbg_msg(paste_addr, -1)
+    if password is not None:
+        dbg_msg("Password: '{}'".format(password), -1)
 
     return 0
 
@@ -184,32 +288,17 @@ def action_param():
     payload_add(payload, 'project', project)
     payload_add(payload, 'param', param)
     dbg_msg("PAYLOAD: " + str(payload), 3)
+    dbg_msg()
 
     # send the request
-    dbg_msg()
-    r = requests.get(url, json=payload)
-    dbg_msg("URL: " + r.url, 3)
-    dbg_msg("RESULT: " + str(r.status_code) + " " + r.reason, 2)
-    try:
-        r.raise_for_status()
-    except requests.exceptions.HTTPError:
-        dbg_msg("Request failed (HTTP Error: {})".format(str(r.status_code) + " " + r.reason))
+    result = net_perform_to_json(url, payload, 'GET')
+    if result is None:
         return 1
 
-    # handle the answer
-    dbg_msg(r.text, 2)
-    result = json.loads(r.text)
-
-    # check for errors returned by the API
-    try:
-        error = result['result']['error']
-        dbg_msg(error_to_string(error))
-        return 1
-
-    except KeyError:  # no errors
-        dbg_msg("Values for parameter '{}':".format(param))
-        accepted = result['result']['values']
-        dbg_msg(accepted, -1)
+    # handle the response
+    dbg_msg("Values for parameter '{}':".format(param))
+    accepted = result['result']['values']
+    dbg_msg(accepted, -1)
 
     return 0
 
@@ -230,12 +319,13 @@ def main():
 
     # parse 'paste' command
     parser_paste = subparsers.add_parser('paste', help='create a new paste', aliases=['p'])
-    parser_paste.add_argument("data", help="the text to paste")
-    parser_paste.add_argument("--language", "-l", help="The paste's language; defaults to 'text'", default="text")
+    parser_paste.add_argument("data", help="the text to paste (in combination with --file: the path to the file to paste")
+    parser_paste.add_argument("--language", "-l", help="The paste's language; defaults to 'text'")
     parser_paste.add_argument("--title", "-t", help="The paste title; will be based on generated ID if omitted")
     parser_paste.add_argument("--private", "-p", help="Make the paste private", action="store_true")
     parser_paste.add_argument("--password", help="A password string to protect the paste")
     parser_paste.add_argument("--expire", "-e", help="Time in minutes after which paste will be deleted from server", metavar="SECONDS", type=int)
+    parser_paste.add_argument("--file", "-f", help="take the data from this file instead of the commandline", action="store_true")
     parser_paste.set_defaults(func=action_paste)
 
     # parse 'show' command
