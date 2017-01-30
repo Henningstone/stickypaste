@@ -50,8 +50,8 @@ Or, simply just open it in your browser directly: `xdg-open $(ls -al / | stickyp
 
 
 ## TODO / planned features
--[ ] Finish the script; implement `show` and `list`
--[x] allow for piping input into the script (`cat somefile.txt | stickypaste.py paste`)
--[x] let the script read the input text directly from a file (`stickypaste.py paste --file somefile.txt`)
--[ ] base the auto-set language on the file's actualy mimetype
--[ ] make some kind of better docs
+- [ ] Finish the script; implement `show` and `list`
+- [x] allow for piping input into the script (`cat somefile.txt | stickypaste.py paste`)
+- [x] let the script read the input text directly from a file (`stickypaste.py paste --file somefile.txt`)
+- [ ] MAYBE base the auto-set language on the file's actual mimetype (in the langdict.cfg you know)
+- [ ] make some kind of better docs
